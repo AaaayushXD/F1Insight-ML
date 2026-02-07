@@ -6,22 +6,23 @@ import os
 
 class F1DataFetcher:
     """Fetch all F1 data from Ergast API and save raw responses to CSV files."""
-    
-    BASE_URL = os.getenv("API_BASE_URL")
-    if not BASE_URL:
-        raise ValueError("API_BASE_URL is not set")
-    
-    def __init__(self, start_year: int = 2014, end_year: int = 2025):
+
+    def __init__(self, start_year: int = 2014, end_year: int = 2025, base_url: str = None):
+        self.base_url = (base_url or os.getenv("API_BASE_URL") or "").rstrip("/")
+        if not self.base_url:
+            raise ValueError("API_BASE_URL is not set. Set it in .env or pass base_url= to F1DataFetcher.")
         self.start_year = start_year
         self.end_year = end_year
         self.output_dir = "app/data/raw_dataset"
         os.makedirs(self.output_dir, exist_ok=True)
-    
+
     def fetch_data(self, endpoint: str, params: dict = None, max_retries: int = 5) -> dict:
         """Fetch data from API with error handling and retry logic for rate limiting."""
-        url = f"{self.BASE_URL}/{endpoint}.json"
-        if params:
-            url += "?" + "&".join([f"{k}={v}" for k, v in params.items()])
+        url = f"{self.base_url}/{endpoint}"
+        # Always add format=json parameter
+        query_params = params.copy() if params else {}
+        query_params["format"] = "json"
+        url += "?" + "&".join([f"{k}={v}" for k, v in query_params.items()])
         
         for attempt in range(max_retries):
             try:
