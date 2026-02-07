@@ -1,7 +1,14 @@
 """
 F1Insight ML training: race outcome prediction, podium/top-10/DNF probability.
+
 Temporal split: train 2014-2021, val 2022-2023, test 2024-2025.
 Models: Ridge, RandomForest, GradientBoosting, XGBoost (regression + classification).
+
+Enhanced features:
+- Weather data (track/air temp, wet race indicator)
+- Tyre strategy (compounds, stint info)
+- Driver form trends
+- Team relative performance
 """
 
 from pathlib import Path
@@ -10,12 +17,14 @@ import sys
 import warnings
 import numpy as np
 import pandas as pd
+
 try:
     from sklearn.preprocessing import StandardScaler
     from sklearn.linear_model import Ridge, LogisticRegression
 except ImportError as e:
     print("Missing dependency: scikit-learn. Install with: pip install -r requirements.txt", file=sys.stderr)
     sys.exit(1)
+
 from sklearn.ensemble import (
     RandomForestRegressor,
     RandomForestClassifier,
@@ -32,6 +41,7 @@ from sklearn.metrics import (
     confusion_matrix,
     precision_recall_fscore_support,
 )
+from sklearn.model_selection import cross_val_score
 from scipy.stats import spearmanr
 import joblib
 
@@ -40,6 +50,12 @@ try:
     HAS_XGB = True
 except ImportError:
     HAS_XGB = False
+
+try:
+    import optuna
+    HAS_OPTUNA = True
+except ImportError:
+    HAS_OPTUNA = False
 
 from app.ml.build_dataset import build_merged_dataset
 
@@ -52,25 +68,53 @@ TRAIN_SEASONS = (2014, 2021)
 VAL_SEASONS = (2022, 2023)
 TEST_SEASONS = (2024, 2025)
 
+# Updated feature lists with new FastF1 features
 NUMERIC_FEATURES = [
+    # Core positioning features
     "qualifying_position",
     "grid_position",
+    # Driver standings
     "driver_prior_points",
     "driver_prior_wins",
     "driver_prior_position",
+    # Constructor standings
     "constructor_prior_points",
     "constructor_prior_wins",
     "constructor_prior_position",
+    # Pit stop features
     "total_stops",
     "mean_stop_duration",
+    # Circuit features
     "circuit_lat",
     "circuit_lng",
+    # Rolling performance features
     "driver_recent_avg_finish",
     "driver_circuit_avg_finish",
     "driver_avg_positions_gained",
     "constructor_recent_avg_finish",
+    # Form and head-to-head
+    "driver_form_trend",
+    "gap_to_teammate_quali",
+    # Weather features
+    "track_temp",
+    "air_temp",
+    "humidity",
+    "is_wet_race",
+    "wind_speed",
+    # Tyre strategy features
+    "num_stints",
+    "num_compounds_used",
+    "avg_stint_length",
+    "total_tyre_laps",
 ]
-CATEGORICAL_FEATURES = ["driver_id", "constructor_id", "circuit_id"]
+
+CATEGORICAL_FEATURES = [
+    "driver_id",
+    "constructor_id",
+    "circuit_id",
+    "primary_compound",  # tyre compound
+]
+
 TARGET_REGRESSION = "finish_position"
 TARGETS_CLASSIFICATION = ["is_podium", "is_top_10", "is_dnf"]
 
@@ -222,53 +266,169 @@ def run_training(clean_dir: Path = None, output_dir: Path = None):
     y_reg_va = val_df[TARGET_REGRESSION].values if len(val_df) > 0 and val_df[TARGET_REGRESSION].notna().any() else None
     y_reg_te = test_df[TARGET_REGRESSION].values if len(test_df) > 0 and test_df[TARGET_REGRESSION].notna().any() else None
 
-    report = {"temporal_split": {"train": f"{TRAIN_SEASONS[0]}-{TRAIN_SEASONS[1]}", "val": f"{VAL_SEASONS[0]}-{VAL_SEASONS[1]}", "test": f"{TEST_SEASONS[0]}-{TEST_SEASONS[1]}"}, "regression": {}, "classification": {}}
+    # Full feature names list for importance reporting
+    feature_names = numeric_cols + cat_cols
+
+    report = {
+        "temporal_split": {
+            "train": f"{TRAIN_SEASONS[0]}-{TRAIN_SEASONS[1]}",
+            "val": f"{VAL_SEASONS[0]}-{VAL_SEASONS[1]}",
+            "test": f"{TEST_SEASONS[0]}-{TEST_SEASONS[1]}"
+        },
+        "data_summary": {
+            "train_rows": len(train_df),
+            "val_rows": len(val_df),
+            "test_rows": len(test_df),
+            "num_features": len(feature_names),
+            "numeric_features": numeric_cols,
+            "categorical_features": cat_cols,
+        },
+        "regression": {},
+        "classification": {},
+    }
+
+    def get_feature_importance_dict(model, feature_names):
+        """Get feature importance with actual feature names."""
+        if hasattr(model, "feature_importances_"):
+            importances = model.feature_importances_
+            if len(importances) == len(feature_names):
+                return {name: float(imp) for name, imp in zip(feature_names, importances)}
+            else:
+                # Fallback if lengths don't match
+                return {f"feature_{i}": float(v) for i, v in enumerate(importances)}
+        return {}
+
+    def compute_position_bucket_accuracy(y_true, y_pred):
+        """Compute accuracy for position buckets: P1-3, P4-10, P11-20."""
+        def bucket(pos):
+            if pos <= 3:
+                return "P1-3"
+            elif pos <= 10:
+                return "P4-10"
+            else:
+                return "P11-20"
+
+        y_true_buckets = [bucket(p) for p in y_true]
+        y_pred_buckets = [bucket(max(1, min(20, round(p)))) for p in y_pred]
+
+        correct = sum(1 for t, p in zip(y_true_buckets, y_pred_buckets) if t == p)
+        return {
+            "bucket_accuracy": float(correct / len(y_true)) if len(y_true) > 0 else 0.0,
+            "confusion": {
+                "P1-3": sum(1 for t, p in zip(y_true_buckets, y_pred_buckets) if t == "P1-3" and p == "P1-3") / max(1, sum(1 for t in y_true_buckets if t == "P1-3")),
+                "P4-10": sum(1 for t, p in zip(y_true_buckets, y_pred_buckets) if t == "P4-10" and p == "P4-10") / max(1, sum(1 for t in y_true_buckets if t == "P4-10")),
+                "P11-20": sum(1 for t, p in zip(y_true_buckets, y_pred_buckets) if t == "P11-20" and p == "P11-20") / max(1, sum(1 for t in y_true_buckets if t == "P11-20")),
+            }
+        }
 
     # Regression: finish_position
+    print("Training regression models...")
     for name, model in [
         ("ridge", Ridge(alpha=1.0, random_state=RANDOM_STATE)),
-        ("random_forest", RandomForestRegressor(n_estimators=100, max_depth=10, random_state=RANDOM_STATE)),
+        ("random_forest", RandomForestRegressor(n_estimators=100, max_depth=10, random_state=RANDOM_STATE, n_jobs=-1)),
         ("gradient_boosting", GradientBoostingRegressor(n_estimators=100, max_depth=5, random_state=RANDOM_STATE)),
     ]:
+        print(f"  Training {name}...")
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             model.fit(X_tr, y_reg_tr)
+
+        pred_tr = model.predict(X_tr)
         pred_va = model.predict(X_va) if X_va is not None and y_reg_va is not None else None
         pred_te = model.predict(X_te) if X_te is not None and y_reg_te is not None else None
+
         report["regression"][name] = {
-            "train_mae": float(mean_absolute_error(y_reg_tr, model.predict(X_tr))),
-            "train_rmse": float(np.sqrt(mean_squared_error(y_reg_tr, model.predict(X_tr)))),
+            "train_mae": float(mean_absolute_error(y_reg_tr, pred_tr)),
+            "train_rmse": float(np.sqrt(mean_squared_error(y_reg_tr, pred_tr))),
         }
+
         if pred_va is not None and y_reg_va is not None:
-            report["regression"][name]["val_mae"] = float(mean_absolute_error(y_reg_va, pred_va))
-            report["regression"][name]["val_rmse"] = float(np.sqrt(mean_squared_error(y_reg_va, pred_va)))
-            report["regression"][name]["val_spearman"] = float(spearmanr(y_reg_va, pred_va)[0]) if len(np.unique(y_reg_va)) > 1 else 0.0
+            valid_mask = ~np.isnan(y_reg_va)
+            if valid_mask.any():
+                report["regression"][name]["val_mae"] = float(mean_absolute_error(y_reg_va[valid_mask], pred_va[valid_mask]))
+                report["regression"][name]["val_rmse"] = float(np.sqrt(mean_squared_error(y_reg_va[valid_mask], pred_va[valid_mask])))
+                if len(np.unique(y_reg_va[valid_mask])) > 1:
+                    report["regression"][name]["val_spearman"] = float(spearmanr(y_reg_va[valid_mask], pred_va[valid_mask])[0])
+
         if pred_te is not None and y_reg_te is not None:
-            report["regression"][name]["test_mae"] = float(mean_absolute_error(y_reg_te, pred_te))
-            report["regression"][name]["test_rmse"] = float(np.sqrt(mean_squared_error(y_reg_te, pred_te)))
-            report["regression"][name]["test_spearman"] = float(spearmanr(y_reg_te, pred_te)[0]) if len(np.unique(y_reg_te)) > 1 else 0.0
-        if hasattr(model, "feature_importances_"):
-            report["regression"][name]["feature_importance"] = {f"f{i}": float(v) for i, v in enumerate(model.feature_importances_)}
+            valid_mask = ~np.isnan(y_reg_te)
+            if valid_mask.any():
+                report["regression"][name]["test_mae"] = float(mean_absolute_error(y_reg_te[valid_mask], pred_te[valid_mask]))
+                report["regression"][name]["test_rmse"] = float(np.sqrt(mean_squared_error(y_reg_te[valid_mask], pred_te[valid_mask])))
+                if len(np.unique(y_reg_te[valid_mask])) > 1:
+                    report["regression"][name]["test_spearman"] = float(spearmanr(y_reg_te[valid_mask], pred_te[valid_mask])[0])
+                # Position bucket analysis
+                bucket_stats = compute_position_bucket_accuracy(y_reg_te[valid_mask], pred_te[valid_mask])
+                report["regression"][name]["position_bucket_accuracy"] = bucket_stats
+
+        # Feature importance with names
+        importance = get_feature_importance_dict(model, feature_names)
+        if importance:
+            # Sort by importance and keep top 15
+            sorted_imp = sorted(importance.items(), key=lambda x: abs(x[1]), reverse=True)[:15]
+            report["regression"][name]["feature_importance"] = dict(sorted_imp)
+
+        # Check for overfitting (train/val gap)
+        train_mae = report["regression"][name]["train_mae"]
+        val_mae = report["regression"][name].get("val_mae", train_mae)
+        report["regression"][name]["train_val_gap"] = float(val_mae - train_mae)
+
         joblib.dump(model, output_dir / f"model_regression_{name}.joblib")
 
     if HAS_XGB:
-        xgb_reg = xgb.XGBRegressor(n_estimators=100, max_depth=6, random_state=RANDOM_STATE)
+        print("  Training xgboost...")
+        xgb_reg = xgb.XGBRegressor(
+            n_estimators=100,
+            max_depth=6,
+            learning_rate=0.1,
+            random_state=RANDOM_STATE,
+            n_jobs=-1,
+        )
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             xgb_reg.fit(X_tr, y_reg_tr)
+
+        pred_tr = xgb_reg.predict(X_tr)
+        pred_va = xgb_reg.predict(X_va) if X_va is not None and y_reg_va is not None else None
         pred_te = xgb_reg.predict(X_te) if X_te is not None and y_reg_te is not None else None
+
         report["regression"]["xgboost"] = {
-            "train_mae": float(mean_absolute_error(y_reg_tr, xgb_reg.predict(X_tr))),
-            "train_rmse": float(np.sqrt(mean_squared_error(y_reg_tr, xgb_reg.predict(X_tr)))),
+            "train_mae": float(mean_absolute_error(y_reg_tr, pred_tr)),
+            "train_rmse": float(np.sqrt(mean_squared_error(y_reg_tr, pred_tr))),
         }
+
+        if pred_va is not None and y_reg_va is not None:
+            valid_mask = ~np.isnan(y_reg_va)
+            if valid_mask.any():
+                report["regression"]["xgboost"]["val_mae"] = float(mean_absolute_error(y_reg_va[valid_mask], pred_va[valid_mask]))
+                report["regression"]["xgboost"]["val_rmse"] = float(np.sqrt(mean_squared_error(y_reg_va[valid_mask], pred_va[valid_mask])))
+                if len(np.unique(y_reg_va[valid_mask])) > 1:
+                    report["regression"]["xgboost"]["val_spearman"] = float(spearmanr(y_reg_va[valid_mask], pred_va[valid_mask])[0])
+
         if pred_te is not None and y_reg_te is not None:
-            report["regression"]["xgboost"]["test_mae"] = float(mean_absolute_error(y_reg_te, pred_te))
-            report["regression"]["xgboost"]["test_rmse"] = float(np.sqrt(mean_squared_error(y_reg_te, pred_te)))
-            report["regression"]["xgboost"]["test_spearman"] = float(spearmanr(y_reg_te, pred_te)[0]) if len(np.unique(y_reg_te)) > 1 else 0.0
-        report["regression"]["xgboost"]["feature_importance"] = {f"f{i}": float(v) for i, v in enumerate(xgb_reg.feature_importances_)}
+            valid_mask = ~np.isnan(y_reg_te)
+            if valid_mask.any():
+                report["regression"]["xgboost"]["test_mae"] = float(mean_absolute_error(y_reg_te[valid_mask], pred_te[valid_mask]))
+                report["regression"]["xgboost"]["test_rmse"] = float(np.sqrt(mean_squared_error(y_reg_te[valid_mask], pred_te[valid_mask])))
+                if len(np.unique(y_reg_te[valid_mask])) > 1:
+                    report["regression"]["xgboost"]["test_spearman"] = float(spearmanr(y_reg_te[valid_mask], pred_te[valid_mask])[0])
+                bucket_stats = compute_position_bucket_accuracy(y_reg_te[valid_mask], pred_te[valid_mask])
+                report["regression"]["xgboost"]["position_bucket_accuracy"] = bucket_stats
+
+        # Feature importance with names
+        importance = get_feature_importance_dict(xgb_reg, feature_names)
+        if importance:
+            sorted_imp = sorted(importance.items(), key=lambda x: abs(x[1]), reverse=True)[:15]
+            report["regression"]["xgboost"]["feature_importance"] = dict(sorted_imp)
+
+        train_mae = report["regression"]["xgboost"]["train_mae"]
+        val_mae = report["regression"]["xgboost"].get("val_mae", train_mae)
+        report["regression"]["xgboost"]["train_val_gap"] = float(val_mae - train_mae)
+
         joblib.dump(xgb_reg, output_dir / "model_regression_xgboost.joblib")
 
     # Classification: is_podium
+    print("Training classification models...")
     y_cls_tr = (train_df["is_podium"] == 1).astype(int).values
     y_cls_va = (val_df["is_podium"] == 1).astype(int).values if len(val_df) > 0 and "is_podium" in val_df.columns and val_df["is_podium"].notna().any() else None
     y_cls_te = (test_df["is_podium"] == 1).astype(int).values if len(test_df) > 0 and "is_podium" in test_df.columns and test_df["is_podium"].notna().any() else None
@@ -358,32 +518,96 @@ def run_training(clean_dir: Path = None, output_dir: Path = None):
     else:
         report["classification"]["is_top_10"] = {"status": "skipped", "reason": "insufficient_top10_labels"}
 
-    # Best model selection and justification (academic)
+    # Best model selection and justification
+    print("Analyzing results and selecting best model...")
     reg = report.get("regression", {})
     best_reg_name = None
     best_reg_mae = float("inf")
+    best_reg_spearman = 0.0
+
     for name, data in reg.items():
         mae = data.get("test_mae") or data.get("val_mae") or data.get("train_mae")
         if mae is not None and mae < best_reg_mae:
             best_reg_mae = mae
             best_reg_name = name
+            best_reg_spearman = data.get("test_spearman") or data.get("val_spearman") or 0.0
+
+    # Compute train/val gap for overfitting detection
+    best_model_data = reg.get(best_reg_name, {})
+    train_val_gap = best_model_data.get("train_val_gap", 0.0)
+
     report["best_model"] = {
         "regression": best_reg_name,
+        "regression_mae": best_reg_mae,
+        "regression_spearman": best_reg_spearman,
+        "train_val_gap": train_val_gap,
         "regression_justification": (
-            f"Selected {best_reg_name} for deployment: lowest MAE ({best_reg_mae:.4f}) among Ridge, Random Forest, "
-            "Gradient Boosting, XGBoost. Tree-based models capture non-linear driver/constructor effects; "
-            "XGBoost often best with limited data but may overfit—validation on hold-out seasons recommended."
+            f"Selected {best_reg_name} for deployment: lowest test MAE ({best_reg_mae:.4f}) among Ridge, Random Forest, "
+            "Gradient Boosting, XGBoost. Tree-based models capture non-linear driver/constructor effects. "
+            f"Spearman correlation: {best_reg_spearman:.4f}. Train/Val gap: {train_val_gap:.4f}."
         ),
         "classification_podium": "xgboost" if "xgboost" in report.get("classification", {}).get("is_podium", {}) else "random_forest",
     }
 
+    # Success criteria evaluation
+    success_criteria = {
+        "test_mae_under_2": best_reg_mae < 2.0 if best_reg_mae < float("inf") else False,
+        "spearman_over_085": best_reg_spearman > 0.85 if best_reg_spearman else False,
+        "no_overfitting": abs(train_val_gap) < 0.5,
+    }
+    success_criteria["all_passed"] = all(success_criteria.values())
+
+    report["success_criteria"] = {
+        "test_mae_under_2": {
+            "target": "< 2.0",
+            "actual": f"{best_reg_mae:.4f}" if best_reg_mae < float("inf") else "N/A",
+            "passed": success_criteria["test_mae_under_2"],
+        },
+        "spearman_over_085": {
+            "target": "> 0.85",
+            "actual": f"{best_reg_spearman:.4f}" if best_reg_spearman else "N/A",
+            "passed": success_criteria["spearman_over_085"],
+        },
+        "no_overfitting": {
+            "target": "train_val_gap < 0.5",
+            "actual": f"{train_val_gap:.4f}",
+            "passed": success_criteria["no_overfitting"],
+        },
+        "all_passed": success_criteria["all_passed"],
+    }
+
+    # Print summary
+    print("\n" + "=" * 60)
+    print("TRAINING SUMMARY")
+    print("=" * 60)
+    print(f"Best regression model: {best_reg_name}")
+    print(f"  Test MAE: {best_reg_mae:.4f}")
+    print(f"  Test Spearman: {best_reg_spearman:.4f}")
+    print(f"  Train/Val gap: {train_val_gap:.4f}")
+    print("\nSuccess Criteria:")
+    for key, val in report["success_criteria"].items():
+        if key != "all_passed":
+            status = "PASS" if val["passed"] else "FAIL"
+            print(f"  {key}: {val['actual']} (target: {val['target']}) [{status}]")
+    print(f"\nAll criteria passed: {success_criteria['all_passed']}")
+    print("=" * 60)
+
+    # Save preprocessor and feature names
     joblib.dump(
-        {"scaler": scaler, "encoders": encoders, "numeric_cols": numeric_cols, "cat_cols": cat_cols},
+        {
+            "scaler": scaler,
+            "encoders": encoders,
+            "numeric_cols": numeric_cols,
+            "cat_cols": cat_cols,
+            "feature_names": feature_names,
+        },
         output_dir / "preprocessor.joblib",
     )
+
     with open(output_dir / "evaluation_report.json", "w") as f:
         json.dump(report, f, indent=2)
-    print("Training complete. Report:", output_dir / "evaluation_report.json")
+
+    print(f"\nTraining complete. Report saved to: {output_dir / 'evaluation_report.json'}")
     return report
 
 

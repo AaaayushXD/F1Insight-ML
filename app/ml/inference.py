@@ -1,5 +1,7 @@
 """
 F1Insight inference: load trained models and preprocessor, run prediction.
+
+Supports the enhanced feature set including weather, tyre, and form features.
 """
 
 from pathlib import Path
@@ -10,17 +12,46 @@ import joblib
 
 OUTPUT_DIR = Path(__file__).resolve().parent / "outputs"
 
-# Feature names must match training
+# Feature names must match training (updated with new features)
 NUMERIC_COLS = [
-    "qualifying_position", "grid_position",
-    "driver_prior_points", "driver_prior_wins", "driver_prior_position",
-    "constructor_prior_points", "constructor_prior_wins", "constructor_prior_position",
-    "total_stops", "mean_stop_duration",
-    "circuit_lat", "circuit_lng",
-    "driver_recent_avg_finish", "driver_circuit_avg_finish",
-    "driver_avg_positions_gained", "constructor_recent_avg_finish",
+    # Core positioning features
+    "qualifying_position",
+    "grid_position",
+    # Driver standings
+    "driver_prior_points",
+    "driver_prior_wins",
+    "driver_prior_position",
+    # Constructor standings
+    "constructor_prior_points",
+    "constructor_prior_wins",
+    "constructor_prior_position",
+    # Pit stop features
+    "total_stops",
+    "mean_stop_duration",
+    # Circuit features
+    "circuit_lat",
+    "circuit_lng",
+    # Rolling performance features
+    "driver_recent_avg_finish",
+    "driver_circuit_avg_finish",
+    "driver_avg_positions_gained",
+    "constructor_recent_avg_finish",
+    # Form and head-to-head
+    "driver_form_trend",
+    "gap_to_teammate_quali",
+    # Weather features
+    "track_temp",
+    "air_temp",
+    "humidity",
+    "is_wet_race",
+    "wind_speed",
+    # Tyre strategy features
+    "num_stints",
+    "num_compounds_used",
+    "avg_stint_length",
+    "total_tyre_laps",
 ]
-CAT_COLS = ["driver_id", "constructor_id", "circuit_id"]
+CAT_COLS = ["driver_id", "constructor_id", "circuit_id", "primary_compound"]
 
 
 def _load_artifacts(output_dir: Path):

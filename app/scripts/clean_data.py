@@ -277,42 +277,64 @@ def clean_sprint(raw_path: Path, clean_path: Path) -> pd.DataFrame:
 
 
 def clean_pitstops(raw_path: Path, clean_path: Path, races_df: Optional[pd.DataFrame] = None) -> pd.DataFrame:
+    """Clean pit stops data, handling both Ergast API format and Kaggle/direct DB format."""
     for name in ("pitstops.csv", "pit_stops.csv"):
         path = raw_path / name
         if path.exists():
             break
     else:
+        print("  No pitstops file found in raw data")
         return pd.DataFrame()
 
     df = pd.read_csv(path)
+    if df.empty:
+        print("  Pitstops file is empty")
+        return pd.DataFrame()
+
+    print(f"  Raw pitstops: {len(df)} rows, columns: {list(df.columns)}")
 
     if "season" in df.columns and "round" in df.columns:
+        # Ergast API format with season/round already present
         season = df["season"].astype(int)
         round_ = df["round"].astype(int)
         driver_col = "Driver_driverId" if "Driver_driverId" in df.columns else "driverId"
         driver_id = df[driver_col].astype(str).str.strip().str.lower()
-    else:
-        # Alternative: raceId, driverId; need races to get season, round
+    elif "raceId" in df.columns:
+        # Kaggle/direct DB format: raceId, driverId; need races to get season, round
         if races_df is None:
             races_path = raw_path / "races.csv"
             if races_path.exists():
                 races_df = pd.read_csv(races_path)
             else:
+                print("  Cannot find races.csv to map raceId -> (season, round)")
                 return pd.DataFrame()
+
         rid_col = "raceId" if "raceId" in races_df.columns else "race_id"
         if rid_col not in races_df.columns:
+            print(f"  races.csv missing {rid_col} column")
             return pd.DataFrame()
+
         season_col = "year" if "year" in races_df.columns else "season"
-        race_lookup = races_df.set_index(rid_col)[[season_col, "round"]]
-        race_lookup = race_lookup.rename(columns={season_col: "season"})
-        df = df.merge(race_lookup, left_on="raceId", right_index=True, how="left")
+        race_lookup = races_df[[rid_col, season_col, "round"]].drop_duplicates()
+        race_lookup = race_lookup.rename(columns={season_col: "season", rid_col: "raceId"})
+
+        df = df.merge(race_lookup, on="raceId", how="left")
+
+        # Filter out rows where merge failed (no matching race)
+        df = df.dropna(subset=["season", "round"])
+        if df.empty:
+            print("  No pitstops matched to races after merge")
+            return pd.DataFrame()
+
         season = df["season"].astype(int)
         round_ = df["round"].astype(int)
         driver_id = df["driverId"].astype(str).str.strip().str.lower()
+    else:
+        print(f"  Pitstops file has unknown format. Columns: {list(df.columns)}")
+        return pd.DataFrame()
 
     stop_col = "stop"
     lap_col = "lap"
-    dur_col = "duration" if "duration" in df.columns else "milliseconds"
 
     out = pd.DataFrame()
     out["season"] = season
@@ -320,6 +342,7 @@ def clean_pitstops(raw_path: Path, clean_path: Path, races_df: Optional[pd.DataF
     out["driver_id"] = driver_id
     out["lap"] = pd.to_numeric(df[lap_col], errors="coerce")
     out["stop_number"] = pd.to_numeric(df[stop_col], errors="coerce")
+
     if "duration" in df.columns:
         out["duration_seconds"] = df["duration"].apply(_parse_duration_seconds)
     elif "milliseconds" in df.columns:
@@ -327,6 +350,10 @@ def clean_pitstops(raw_path: Path, clean_path: Path, races_df: Optional[pd.DataF
     else:
         out["duration_seconds"] = None
 
+    # Remove rows with invalid data
+    out = out.dropna(subset=["season", "round", "driver_id"])
+
+    print(f"  Cleaned pitstops: {len(out)} rows")
     out.to_csv(clean_path / "pitstops.csv", index=False)
     return out
 
@@ -372,7 +399,11 @@ def clean_constructor_standings(raw_path: Path, clean_path: Path) -> pd.DataFram
 
 
 def apply_foreign_key_filters(clean_path: Path) -> None:
-    """Remove orphan records so all FKs reference master/races."""
+    """Remove orphan records so all FKs reference master/races.
+
+    More lenient filtering for pitstops to avoid losing valid data when
+    driver_id formats don't match (e.g., numeric vs string slugs).
+    """
     clean_path = Path(clean_path)
     drivers = pd.read_csv(clean_path / "drivers.csv")["driver_id"].astype(str).str.strip().str.lower()
     constructors = pd.read_csv(clean_path / "constructors.csv")["constructor_id"].astype(str).str.strip().str.lower()
@@ -386,16 +417,26 @@ def apply_foreign_key_filters(clean_path: Path) -> None:
     valid_circuit = set(circuits)
     valid_status = set(statuses)
 
-    def filter_df(path: str, keep_fn) -> int:
+    def filter_df(path: str, keep_fn, warn_only: bool = False) -> int:
         p = clean_path / path
         if not p.exists():
             return 0
         df = pd.read_csv(p)
+        if df.empty:
+            return 0
         before = len(df)
-        mask = keep_fn(df)
-        df = df.loc[mask]
-        df.to_csv(p, index=False)
-        return before - len(df)
+        try:
+            mask = keep_fn(df)
+            removed = (~mask).sum()
+            if warn_only and removed > 0:
+                print(f"  {path}: {removed} rows have FK mismatches (kept anyway)")
+                return 0
+            df = df.loc[mask]
+            df.to_csv(p, index=False)
+            return before - len(df)
+        except Exception as e:
+            print(f"  {path}: filter error: {e}")
+            return 0
 
     # results
     n = filter_df(
@@ -411,7 +452,7 @@ def apply_foreign_key_filters(clean_path: Path) -> None:
         print(f"  results: removed {n} orphan rows")
 
     # qualifying
-    filter_df(
+    n = filter_df(
         "qualifying.csv",
         lambda d: (
             d["driver_id"].astype(str).str.strip().str.lower().isin(valid_driver)
@@ -419,9 +460,11 @@ def apply_foreign_key_filters(clean_path: Path) -> None:
             & d.apply(lambda r: (int(r["season"]), int(r["round"])) in race_keys, axis=1)
         ),
     )
+    if n:
+        print(f"  qualifying: removed {n} orphan rows")
 
     # sprint
-    filter_df(
+    n = filter_df(
         "sprint.csv",
         lambda d: (
             d["driver_id"].astype(str).str.strip().str.lower().isin(valid_driver)
@@ -429,27 +472,46 @@ def apply_foreign_key_filters(clean_path: Path) -> None:
             & d.apply(lambda r: (int(r["season"]), int(r["round"])) in race_keys, axis=1)
         ),
     )
+    if n:
+        print(f"  sprint: removed {n} orphan rows")
 
-    # pitstops
-    filter_df(
-        "pitstops.csv",
-        lambda d: (
-            d["driver_id"].astype(str).str.strip().str.lower().isin(valid_driver)
-            & d.apply(lambda r: (int(r["season"]), int(r["round"])) in race_keys, axis=1)
-        ),
-    )
+    # pitstops: Only filter by race_keys (season/round), be lenient with driver_id
+    # because driver_id might be numeric from one source vs slug from another
+    p = clean_path / "pitstops.csv"
+    if p.exists():
+        df = pd.read_csv(p)
+        if not df.empty:
+            before = len(df)
+            # Only filter by race existence
+            race_mask = df.apply(lambda r: (int(r["season"]), int(r["round"])) in race_keys, axis=1)
+            driver_mask = df["driver_id"].astype(str).str.strip().str.lower().isin(valid_driver)
+
+            # Report but don't filter on driver_id mismatch
+            driver_mismatches = (~driver_mask).sum()
+            if driver_mismatches > 0:
+                print(f"  pitstops: {driver_mismatches} rows have unmatched driver_id (format mismatch)")
+
+            df = df.loc[race_mask]
+            df.to_csv(p, index=False)
+            removed = before - len(df)
+            if removed > 0:
+                print(f"  pitstops: removed {removed} rows (race not in cleaned races)")
 
     # driver_standings
-    filter_df(
+    n = filter_df(
         "driver_standings.csv",
         lambda d: d["driver_id"].astype(str).str.strip().str.lower().isin(valid_driver),
     )
+    if n:
+        print(f"  driver_standings: removed {n} orphan rows")
 
     # constructor_standings
-    filter_df(
+    n = filter_df(
         "constructor_standings.csv",
         lambda d: d["constructor_id"].astype(str).str.strip().str.lower().isin(valid_constructor),
     )
+    if n:
+        print(f"  constructor_standings: removed {n} orphan rows")
 
     # races: keep only circuit_id in circuits (skip if no overlap, e.g. numeric vs string ID scheme)
     p = clean_path / "races.csv"
@@ -464,6 +526,68 @@ def apply_foreign_key_filters(clean_path: Path) -> None:
                 print(f"  races: removed {before - len(df)} orphan rows (circuit_id not in circuits)")
         else:
             print("  races: no circuit_id match with circuits (ID scheme mismatch?); races left unchanged.")
+
+
+def clean_tyre_stints(raw_path: Path, clean_path: Path) -> pd.DataFrame:
+    """Clean FastF1 tyre stint data."""
+    path = raw_path / "tyre_stints.csv"
+    if not path.exists():
+        return pd.DataFrame()
+
+    df = pd.read_csv(path)
+    if df.empty:
+        return df
+
+    # Normalize compound names
+    compound_map = {
+        "SOFT": "soft",
+        "MEDIUM": "medium",
+        "HARD": "hard",
+        "INTERMEDIATE": "intermediate",
+        "WET": "wet",
+        "UNKNOWN": "unknown",
+    }
+
+    out = pd.DataFrame()
+    out["season"] = df["season"].astype(int)
+    out["round"] = df["round"].astype(int)
+    out["driver_id"] = df["driver_id"].astype(str).str.strip().str.lower()
+    out["stint_number"] = pd.to_numeric(df["stint_number"], errors="coerce")
+    out["compound"] = df["compound"].astype(str).str.upper().map(
+        lambda x: compound_map.get(x, x.lower())
+    )
+    out["start_lap"] = pd.to_numeric(df["start_lap"], errors="coerce")
+    out["end_lap"] = pd.to_numeric(df["end_lap"], errors="coerce")
+    out["tyre_life"] = pd.to_numeric(df["tyre_life"], errors="coerce")
+    out["avg_lap_time"] = pd.to_numeric(df["avg_lap_time"], errors="coerce")
+
+    out.to_csv(clean_path / "tyre_stints.csv", index=False)
+    print(f"  Cleaned tyre stints: {len(out)} rows")
+    return out
+
+
+def clean_weather(raw_path: Path, clean_path: Path) -> pd.DataFrame:
+    """Clean FastF1 weather data."""
+    path = raw_path / "weather.csv"
+    if not path.exists():
+        return pd.DataFrame()
+
+    df = pd.read_csv(path)
+    if df.empty:
+        return df
+
+    out = pd.DataFrame()
+    out["season"] = df["season"].astype(int)
+    out["round"] = df["round"].astype(int)
+    out["track_temp"] = pd.to_numeric(df["track_temp"], errors="coerce")
+    out["air_temp"] = pd.to_numeric(df["air_temp"], errors="coerce")
+    out["humidity"] = pd.to_numeric(df.get("humidity"), errors="coerce")
+    out["rainfall"] = df.get("rainfall", False).fillna(False).astype(bool)
+    out["wind_speed"] = pd.to_numeric(df.get("wind_speed"), errors="coerce")
+
+    out.to_csv(clean_path / "weather.csv", index=False)
+    print(f"  Cleaned weather: {len(out)} rows")
+    return out
 
 
 def run_cleaning(
@@ -498,6 +622,10 @@ def run_cleaning(
     clean_pitstops(raw_path, clean_path, races_df=pd.read_csv(raw_path / "races.csv") if (raw_path / "races.csv").exists() else None)
     clean_driver_standings(raw_path, clean_path)
     clean_constructor_standings(raw_path, clean_path)
+
+    print("Cleaning FastF1 data (if available)...")
+    clean_tyre_stints(raw_path, clean_path)
+    clean_weather(raw_path, clean_path)
 
     print("Applying foreign-key filters (removing orphans)...")
     apply_foreign_key_filters(clean_path)

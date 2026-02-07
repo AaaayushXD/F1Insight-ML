@@ -1,3 +1,15 @@
+"""
+F1Insight API - Race Outcome Prediction and Strategy Recommendation
+
+This API provides endpoints for:
+- Race finish position prediction using ML models
+- Pit stop strategy recommendations via Monte Carlo simulation
+- Historical F1 data access (seasons, races, drivers)
+- Data collection from Ergast API
+
+API Documentation available at /docs (Swagger UI) or /redoc (ReDoc)
+"""
+
 from pathlib import Path
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
@@ -6,10 +18,37 @@ load_dotenv()
 from app.config.config import API_BASE_URL
 from app.scripts.collect_data import F1DataFetcher
 
-app = FastAPI(title="F1Insight API", description="Race outcome prediction and strategy assistance")
+# API metadata for documentation
+app = FastAPI(
+    title="F1Insight API",
+    description="""
+## F1 Race Prediction and Strategy Recommendation API
+
+### Features
+- **Race Prediction**: Predict finish positions using ML models (XGBoost, Gradient Boosting, Random Forest)
+- **Strategy Recommendation**: Monte Carlo simulation for pit stop strategy optimization
+- **Data Access**: Query historical F1 data (seasons, races, drivers, results)
+- **Data Collection**: Trigger data collection from Ergast API
+
+### Models
+- Regression models for finish position prediction
+- Classification models for podium probability
+- Strategy clustering with KMeans + Monte Carlo simulation
+
+### Documentation
+- Swagger UI: `/docs`
+- ReDoc: `/redoc`
+- OpenAPI JSON: `/openapi.json`
+    """,
+    version="1.0.0",
+    docs_url="/docs",
+    redoc_url="/redoc",
+)
+
+# CORS middleware for API access
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://localhost:3000", "http://127.0.0.1:5173", "http://127.0.0.1:3000"],
+    allow_origins=["*"],  # Allow all origins for API access
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -72,14 +111,43 @@ def predict(
 
 @app.get("/strategy")
 def strategy_recommendation(
-    predicted_position_mean: float = Query(..., ge=1, le=20),
-    predicted_position_std: float = Query(2.0, ge=0.1, le=10),
-    pit_loss_sec: float = Query(22.0, ge=15, le=35),
-    n_simulations: int = Query(2000, ge=100, le=10000),
+    predicted_position_mean: float = Query(..., ge=1, le=20, description="Expected finish position (1-20)"),
+    predicted_position_std: float = Query(2.0, ge=0.1, le=10, description="Position uncertainty (std dev)"),
+    pit_loss_sec: float = Query(22.0, ge=15, le=35, description="Pit stop time loss in seconds"),
+    n_simulations: int = Query(2000, ge=100, le=10000, description="Monte Carlo simulation count"),
+    # Enhanced parameters
+    circuit_id: str = Query(None, description="Circuit ID for safety car probability (e.g., 'monaco', 'silverstone')"),
+    race_laps: int = Query(56, ge=30, le=80, description="Total race laps"),
+    track_temp: float = Query(None, ge=10, le=70, description="Track temperature in Celsius"),
+    air_temp: float = Query(None, ge=5, le=50, description="Air temperature in Celsius"),
+    humidity: float = Query(None, ge=0, le=100, description="Humidity percentage"),
+    rain_probability: float = Query(0.0, ge=0, le=1, description="Rain probability (0-1)"),
+    is_wet_race: bool = Query(False, description="Is this a wet race?"),
+    gap_to_car_ahead: float = Query(1.0, ge=0, le=60, description="Gap to car ahead in seconds"),
+    gap_to_car_behind: float = Query(1.0, ge=0, le=60, description="Gap to car behind in seconds"),
 ):
     """
-    Recommend pit strategy using Monte Carlo simulation.
-    Input: expected finishing position and uncertainty (std).
+    Enhanced pit strategy recommendation using Monte Carlo simulation.
+
+    **Features:**
+    - **Tyre Compound Optimization**: Generates optimal compound sequences (S-M-H, M-H, etc.)
+    - **Safety Car Probability**: Circuit-specific SC likelihood from historical incidents
+    - **Weather Integration**: Adjusts strategy for temperature and rain conditions
+    - **Competitor Modeling**: Undercut/overcut opportunity analysis based on gaps
+
+    **Example Usage:**
+    ```
+    /strategy?predicted_position_mean=5&circuit_id=monaco&track_temp=45&rain_probability=0.2
+    ```
+
+    **Returns:**
+    - Best strategy recommendation
+    - Strategy rankings with confidence intervals
+    - Safety car analysis
+    - Weather impact assessment
+    - Undercut/overcut opportunities
+    - Top compound strategy options
+    - Tactical recommendations
     """
     from app.ml.strategy import recommend_strategy
     out = recommend_strategy(
@@ -87,6 +155,15 @@ def strategy_recommendation(
         predicted_position_std=predicted_position_std,
         pit_loss_sec=pit_loss_sec,
         n_simulations=n_simulations,
+        circuit_id=circuit_id,
+        race_laps=race_laps,
+        track_temp=track_temp,
+        air_temp=air_temp,
+        humidity=humidity,
+        rain_probability=rain_probability,
+        is_wet_race=is_wet_race,
+        gap_to_car_ahead=gap_to_car_ahead,
+        gap_to_car_behind=gap_to_car_behind,
     )
     return out
 

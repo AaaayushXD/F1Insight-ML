@@ -5,10 +5,6 @@ API_BASE_URL = os.getenv("API_BASE_URL")
 if not API_BASE_URL:
     raise ValueError("API_BASE_URL is not set")
 
-
-
-
-
 async def fetch_data(endpoint, limit=100, offset=0):
     rows = []
     total = 0
