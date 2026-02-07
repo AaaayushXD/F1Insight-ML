@@ -5,9 +5,9 @@
     "test": "2024-2025"
   },
   "data_summary": {
-    "train_rows": 210,
-    "val_rows": 0,
-    "test_rows": 0,
+    "train_rows": 3267,
+    "val_rows": 880,
+    "test_rows": 958,
     "num_features": 31,
     "numeric_features": [
       "qualifying_position",
@@ -47,124 +47,258 @@
   },
   "regression": {
     "ridge": {
-      "train_mae": 2.9360559470526533,
-      "train_rmse": 4.012920826374579,
-      "train_val_gap": 0.0
+      "train_mae": 3.4204771068367013,
+      "train_rmse": 4.3484792832364505,
+      "val_mae": 3.3351057643223396,
+      "val_rmse": 4.300174225203255,
+      "val_spearman": 0.6585881212917772,
+      "test_mae": 3.215320948118635,
+      "test_rmse": 4.0945880817851945,
+      "test_spearman": 0.6980052036868792,
+      "position_bucket_accuracy": {
+        "bucket_accuracy": 0.6597077244258872,
+        "confusion": {
+          "P1-3": 0.18055555555555555,
+          "P4-10": 0.6130952380952381,
+          "P11-20": 0.8368200836820083
+        }
+      },
+      "train_val_gap": -0.08537134251436163
     },
     "random_forest": {
-      "train_mae": 1.3079072099846702,
-      "train_rmse": 1.738341970831255,
-      "feature_importance": {
-        "qualifying_position": 0.40912879140324715,
-        "grid_position": 0.07940362540990656,
-        "constructor_prior_points": 0.07649422440385112,
-        "driver_avg_positions_gained": 0.05701935720558036,
-        "driver_prior_points": 0.055340573704015024,
-        "gap_to_teammate_quali": 0.0509451332005374,
-        "constructor_id": 0.04318853520186233,
-        "driver_id": 0.034106163808897506,
-        "constructor_recent_avg_finish": 0.03213435096593023,
-        "driver_prior_position": 0.03207572869047718,
-        "driver_recent_avg_finish": 0.027916499787985088,
-        "driver_form_trend": 0.026469891145858664,
-        "driver_circuit_avg_finish": 0.025670182980056865,
-        "constructor_prior_position": 0.01801199424559404,
-        "circuit_id": 0.015160885441778994
+      "train_mae": 1.9644888485090344,
+      "train_rmse": 2.5636439024074438,
+      "val_mae": 2.9951506095420384,
+      "val_rmse": 3.9791740471470307,
+      "val_spearman": 0.720283872413998,
+      "test_mae": 2.7902936410641543,
+      "test_rmse": 3.741510236417828,
+      "test_spearman": 0.7590200073281066,
+      "position_bucket_accuracy": {
+        "bucket_accuracy": 0.7014613778705637,
+        "confusion": {
+          "P1-3": 0.3680555555555556,
+          "P4-10": 0.6785714285714286,
+          "P11-20": 0.8179916317991632
+        }
       },
-      "train_val_gap": 0.0
+      "feature_importance": {
+        "qualifying_position": 0.37779070992730074,
+        "total_stops": 0.11190622860907005,
+        "mean_stop_duration": 0.10160889653673502,
+        "grid_position": 0.09676745661025662,
+        "constructor_recent_avg_finish": 0.06898593817409902,
+        "driver_recent_avg_finish": 0.03584693113077967,
+        "gap_to_teammate_quali": 0.025278656434248793,
+        "driver_avg_positions_gained": 0.023993415655943692,
+        "driver_form_trend": 0.02171335459588163,
+        "circuit_lat": 0.017375284522818203,
+        "circuit_id": 0.015587984341227113,
+        "constructor_prior_points": 0.014904619872734951,
+        "driver_circuit_avg_finish": 0.014639792010691691,
+        "driver_prior_points": 0.014375822018247341,
+        "driver_id": 0.013014692819323154
+      },
+      "train_val_gap": 1.030661761033004
     },
     "gradient_boosting": {
-      "train_mae": 0.3154478421643516,
-      "train_rmse": 0.4321988490838865,
-      "feature_importance": {
-        "qualifying_position": 0.39394653074243347,
-        "grid_position": 0.07503551453762572,
-        "constructor_prior_wins": 0.06639497649691209,
-        "driver_avg_positions_gained": 0.06315075770028271,
-        "gap_to_teammate_quali": 0.0471698441048545,
-        "driver_id": 0.04381916948148352,
-        "constructor_prior_points": 0.043713619296667186,
-        "constructor_recent_avg_finish": 0.03794482926893097,
-        "driver_circuit_avg_finish": 0.03461066641032891,
-        "constructor_id": 0.033165467260710034,
-        "driver_form_trend": 0.030268858622435182,
-        "driver_prior_position": 0.03000984384693994,
-        "driver_prior_points": 0.026749560520444762,
-        "circuit_id": 0.026471320889254232,
-        "driver_recent_avg_finish": 0.026416675118411878
+      "train_mae": 2.0005762109665928,
+      "train_rmse": 2.675198100463423,
+      "val_mae": 2.9772433571999017,
+      "val_rmse": 4.011897956401224,
+      "val_spearman": 0.7164492699696425,
+      "test_mae": 2.7539370303067785,
+      "test_rmse": 3.7124193985636373,
+      "test_spearman": 0.7627556351611243,
+      "position_bucket_accuracy": {
+        "bucket_accuracy": 0.7171189979123174,
+        "confusion": {
+          "P1-3": 0.4027777777777778,
+          "P4-10": 0.6934523809523809,
+          "P11-20": 0.8284518828451883
+        }
       },
-      "train_val_gap": 0.0
+      "feature_importance": {
+        "qualifying_position": 0.3745906031111267,
+        "mean_stop_duration": 0.1340905538497601,
+        "total_stops": 0.10861757094942281,
+        "grid_position": 0.09891616398960736,
+        "constructor_recent_avg_finish": 0.06007793004344111,
+        "driver_recent_avg_finish": 0.04271909774487856,
+        "gap_to_teammate_quali": 0.02613680274277636,
+        "driver_avg_positions_gained": 0.019904554066916588,
+        "constructor_prior_points": 0.01812839940824248,
+        "driver_form_trend": 0.01736945563226949,
+        "circuit_id": 0.015965845196249075,
+        "circuit_lat": 0.014491535727616262,
+        "driver_circuit_avg_finish": 0.0123459982516224,
+        "driver_id": 0.011709387181681649,
+        "driver_prior_points": 0.009204851641196315
+      },
+      "train_val_gap": 0.976667146233309
     },
     "xgboost": {
-      "train_mae": 0.16559894382953644,
-      "train_rmse": 0.24797222185498705,
-      "feature_importance": {
-        "constructor_prior_wins": 0.5844972133636475,
-        "qualifying_position": 0.0890011191368103,
-        "circuit_id": 0.040765248239040375,
-        "constructor_prior_points": 0.04068499058485031,
-        "driver_avg_positions_gained": 0.0372823029756546,
-        "grid_position": 0.030215421691536903,
-        "constructor_id": 0.0256197452545166,
-        "driver_form_trend": 0.023561086505651474,
-        "driver_prior_position": 0.02058565802872181,
-        "constructor_prior_position": 0.02032727561891079,
-        "driver_circuit_avg_finish": 0.017253603786230087,
-        "constructor_recent_avg_finish": 0.016811035573482513,
-        "gap_to_teammate_quali": 0.016457214951515198,
-        "driver_id": 0.015482182614505291,
-        "driver_prior_points": 0.011255105957388878
+      "train_mae": 1.691562533378601,
+      "train_rmse": 2.3092879592536013,
+      "val_mae": 2.974947214126587,
+      "val_rmse": 3.986065793785915,
+      "val_spearman": 0.7192715001320066,
+      "test_mae": 2.7564480304718018,
+      "test_rmse": 3.712802908000206,
+      "test_spearman": 0.7645757424754782,
+      "position_bucket_accuracy": {
+        "bucket_accuracy": 0.7108559498956158,
+        "confusion": {
+          "P1-3": 0.4513888888888889,
+          "P4-10": 0.6517857142857143,
+          "P11-20": 0.8305439330543933
+        }
       },
-      "train_val_gap": 0.0
+      "feature_importance": {
+        "total_stops": 0.26783061027526855,
+        "qualifying_position": 0.18857775628566742,
+        "grid_position": 0.11199809610843658,
+        "constructor_recent_avg_finish": 0.047949474304914474,
+        "driver_prior_wins": 0.04477064311504364,
+        "driver_recent_avg_finish": 0.04185505956411362,
+        "constructor_prior_points": 0.03151112049818039,
+        "gap_to_teammate_quali": 0.026193903759121895,
+        "mean_stop_duration": 0.0246155746281147,
+        "driver_circuit_avg_finish": 0.023133063688874245,
+        "constructor_id": 0.02067197673022747,
+        "circuit_id": 0.02051507867872715,
+        "driver_avg_positions_gained": 0.02013063244521618,
+        "circuit_lat": 0.019602729007601738,
+        "driver_id": 0.018632669001817703
+      },
+      "train_val_gap": 1.2833846807479858
     }
   },
   "classification": {
     "is_podium": {
       "logistic": {
-        "train_accuracy": 0.9047619047619048,
-        "train_f1": 0.7959183673469388
+        "train_accuracy": 0.8647076828895011,
+        "train_f1": 0.6636225266362252,
+        "test_accuracy": 0.8392484342379958,
+        "test_f1": 0.631578947368421,
+        "test_roc_auc": 0.9315963690963691,
+        "confusion_matrix_test": [
+          [
+            672,
+            142
+          ],
+          [
+            12,
+            132
+          ]
+        ]
       },
       "random_forest": {
-        "train_accuracy": 1.0,
-        "train_f1": 1.0
+        "train_accuracy": 0.9635751453933272,
+        "train_f1": 0.8888888888888888,
+        "test_accuracy": 0.9008350730688935,
+        "test_f1": 0.6984126984126984,
+        "test_roc_auc": 0.9421239421239421,
+        "confusion_matrix_test": [
+          [
+            753,
+            61
+          ],
+          [
+            34,
+            110
+          ]
+        ]
       },
       "gradient_boosting": {
-        "train_accuracy": 1.0,
-        "train_f1": 1.0
+        "train_accuracy": 0.9932659932659933,
+        "train_f1": 0.9766454352441614,
+        "test_accuracy": 0.8966597077244259,
+        "test_f1": 0.6644067796610169,
+        "test_roc_auc": 0.9347444034944035,
+        "confusion_matrix_test": [
+          [
+            761,
+            53
+          ],
+          [
+            46,
+            98
+          ]
+        ]
       },
       "xgboost": {
         "train_accuracy": 1.0,
-        "train_f1": 1.0
+        "train_f1": 1.0,
+        "test_accuracy": 0.894572025052192,
+        "test_f1": 0.6710097719869706,
+        "test_roc_auc": 0.930077805077805,
+        "confusion_matrix_test": [
+          [
+            754,
+            60
+          ],
+          [
+            41,
+            103
+          ]
+        ]
       }
     },
     "is_top_10": {
-      "status": "skipped",
-      "reason": "insufficient_top10_labels"
+      "logistic": {
+        "train_accuracy": 0.7621671258034894,
+        "train_f1": 0.7566551832132791,
+        "test_accuracy": 0.8016701461377871,
+        "test_f1": 0.7956989247311828,
+        "test_roc_auc": 0.8735312064156208
+      },
+      "random_forest": {
+        "train_accuracy": 0.9170492806856443,
+        "train_f1": 0.9177042210750076,
+        "test_accuracy": 0.8173277661795407,
+        "test_f1": 0.8223350253807107,
+        "test_roc_auc": 0.8896879358437935
+      },
+      "gradient_boosting": {
+        "train_accuracy": 0.9286807468625651,
+        "train_f1": 0.9281529448041936,
+        "test_accuracy": 0.791231732776618,
+        "test_f1": 0.7946611909650924,
+        "test_roc_auc": 0.8709858786610879
+      },
+      "xgboost": {
+        "train_accuracy": 0.9993878175696358,
+        "train_f1": 0.999375,
+        "test_accuracy": 0.7849686847599165,
+        "test_f1": 0.7927565392354124,
+        "test_roc_auc": 0.8641082635983263
+      }
     }
   },
   "best_model": {
-    "regression": "xgboost",
-    "regression_mae": 0.16559894382953644,
-    "regression_spearman": 0.0,
-    "train_val_gap": 0.0,
-    "regression_justification": "Selected xgboost for deployment: lowest test MAE (0.1656) among Ridge, Random Forest, Gradient Boosting, XGBoost. Tree-based models capture non-linear driver/constructor effects. Spearman correlation: 0.0000. Train/Val gap: 0.0000.",
+    "regression": "gradient_boosting",
+    "regression_mae": 2.7539370303067785,
+    "regression_spearman": 0.7627556351611243,
+    "train_val_gap": 0.976667146233309,
+    "regression_justification": "Selected gradient_boosting for deployment: lowest test MAE (2.7539) among Ridge, Random Forest, Gradient Boosting, XGBoost. Tree-based models capture non-linear driver/constructor effects. Spearman correlation: 0.7628. Train/Val gap: 0.9767.",
     "classification_podium": "xgboost"
   },
   "success_criteria": {
     "test_mae_under_2": {
       "target": "< 2.0",
-      "actual": "0.1656",
-      "passed": true
+      "actual": "2.7539",
+      "passed": false
     },
     "spearman_over_085": {
       "target": "> 0.85",
-      "actual": "N/A",
+      "actual": "0.7628",
       "passed": false
     },
     "no_overfitting": {
       "target": "train_val_gap < 0.5",
-      "actual": "0.0000",
-      "passed": true
+      "actual": "0.9767",
+      "passed": false
     },
     "all_passed": false
   }

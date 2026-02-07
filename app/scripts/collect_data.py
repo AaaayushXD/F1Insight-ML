@@ -198,48 +198,79 @@ class F1DataFetcher:
         return df
     
     def get_results(self) -> pd.DataFrame:
-        """Fetch race results for all years."""
+        """Fetch race results for all years with pagination."""
         print("Fetching results...")
         all_data = []
-        
+
         for year in range(self.start_year, self.end_year + 1):
-            data = self.fetch_data(f"{year}/results")
-            
-            if data and 'MRData' in data:
+            offset = 0
+            limit = 100  # API returns results, paginated by this limit
+
+            while True:
+                data = self.fetch_data(f"{year}/results", params={"limit": limit, "offset": offset})
+
+                if not data or 'MRData' not in data:
+                    break
+
                 races = data['MRData']['RaceTable'].get('Races', [])
+                if not races:
+                    break
+
+                batch_count = 0
                 for race in races:
                     race_info = {k: v for k, v in race.items() if k != 'Results'}
                     flattened_race = self.flatten_dict(race_info)
-                    
+
                     for result in race.get('Results', []):
                         flattened_result = self.flatten_dict(result)
                         combined = {**flattened_race, **flattened_result}
                         all_data.append(combined)
-        
+                        batch_count += 1
+
+                # Check if we got all data
+                total = int(data['MRData'].get('total', 0))
+                offset += limit
+                if offset >= total:
+                    break
+
         df = pd.DataFrame(all_data)
         df.to_csv(f"{self.output_dir}/results.csv", index=False)
         print(f"Saved {len(df)} results")
         return df
     
     def get_sprint(self) -> pd.DataFrame:
-        """Fetch sprint race results for all years."""
+        """Fetch sprint race results for all years with pagination."""
         print("Fetching sprint results...")
         all_data = []
-        
+
         for year in range(self.start_year, self.end_year + 1):
-            data = self.fetch_data(f"{year}/sprint")
-            
-            if data and 'MRData' in data:
+            offset = 0
+            limit = 100
+
+            while True:
+                data = self.fetch_data(f"{year}/sprint", params={"limit": limit, "offset": offset})
+
+                if not data or 'MRData' not in data:
+                    break
+
                 races = data['MRData']['RaceTable'].get('Races', [])
+                if not races:
+                    break
+
                 for race in races:
                     race_info = {k: v for k, v in race.items() if k != 'SprintResults'}
                     flattened_race = self.flatten_dict(race_info)
-                    
+
                     for result in race.get('SprintResults', []):
                         flattened_result = self.flatten_dict(result)
                         combined = {**flattened_race, **flattened_result}
                         all_data.append(combined)
-        
+
+                total = int(data['MRData'].get('total', 0))
+                offset += limit
+                if offset >= total:
+                    break
+
         df = pd.DataFrame(all_data)
         if len(df) > 0:
             df.to_csv(f"{self.output_dir}/sprint.csv", index=False)
@@ -247,26 +278,40 @@ class F1DataFetcher:
         else:
             print("No sprint data available")
         return df
-    
+
     def get_qualifying(self) -> pd.DataFrame:
-        """Fetch qualifying results for all years."""
+        """Fetch qualifying results for all years with pagination."""
         print("Fetching qualifying...")
         all_data = []
-        
+
         for year in range(self.start_year, self.end_year + 1):
-            data = self.fetch_data(f"{year}/qualifying")
-            
-            if data and 'MRData' in data:
+            offset = 0
+            limit = 100
+
+            while True:
+                data = self.fetch_data(f"{year}/qualifying", params={"limit": limit, "offset": offset})
+
+                if not data or 'MRData' not in data:
+                    break
+
                 races = data['MRData']['RaceTable'].get('Races', [])
+                if not races:
+                    break
+
                 for race in races:
                     race_info = {k: v for k, v in race.items() if k != 'QualifyingResults'}
                     flattened_race = self.flatten_dict(race_info)
-                    
+
                     for qual in race.get('QualifyingResults', []):
                         flattened_qual = self.flatten_dict(qual)
                         combined = {**flattened_race, **flattened_qual}
                         all_data.append(combined)
-        
+
+                total = int(data['MRData'].get('total', 0))
+                offset += limit
+                if offset >= total:
+                    break
+
         df = pd.DataFrame(all_data)
         df.to_csv(f"{self.output_dir}/qualifying.csv", index=False)
         print(f"Saved {len(df)} qualifying results")
