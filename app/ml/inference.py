@@ -12,7 +12,7 @@ import joblib
 
 OUTPUT_DIR = Path(__file__).resolve().parent / "outputs"
 
-# Feature names must match training (updated with new features)
+# Pre-race features only (must match training — no race-time data)
 NUMERIC_COLS = [
     # Core positioning features
     "qualifying_position",
@@ -25,12 +25,13 @@ NUMERIC_COLS = [
     "constructor_prior_points",
     "constructor_prior_wins",
     "constructor_prior_position",
-    # Pit stop features
-    "total_stops",
-    "mean_stop_duration",
+    # Historical pitstop features (pre-race knowable)
+    "historical_avg_stops_at_circuit",
+    "driver_historical_avg_stops",
     # Circuit features
     "circuit_lat",
     "circuit_lng",
+    "circuit_avg_positions_gained",
     # Rolling performance features
     "driver_recent_avg_finish",
     "driver_circuit_avg_finish",
@@ -39,22 +40,39 @@ NUMERIC_COLS = [
     # Form and head-to-head
     "driver_form_trend",
     "gap_to_teammate_quali",
+    # Pre-race derived features
+    "season_round_number",
+    "constructor_relative_performance",
+    # Reliability features
+    "driver_dnf_rate",
+    "constructor_dnf_rate",
     # Weather features
     "track_temp",
     "air_temp",
     "humidity",
     "is_wet_race",
     "wind_speed",
-    # Tyre strategy features
-    "num_stints",
-    "num_compounds_used",
-    "avg_stint_length",
-    "total_tyre_laps",
 ]
-CAT_COLS = ["driver_id", "constructor_id", "circuit_id", "primary_compound"]
+CAT_COLS = ["driver_id", "constructor_id", "circuit_id"]
 
 
 def _load_artifacts(output_dir: Path):
+    # Prefer production pickle if available
+    prod_path = output_dir / "f1insight_production_model.joblib"
+    if prod_path.exists():
+        artifact = joblib.load(prod_path)
+        scaler = artifact["scaler"]
+        encoders = artifact["encoders"]
+        numeric_cols = artifact.get("numeric_cols", NUMERIC_COLS)
+        cat_cols = artifact.get("cat_cols", CAT_COLS)
+        # Ensemble: use meta_model + base_models
+        if "meta_model" in artifact and "base_models" in artifact:
+            return (scaler, encoders, numeric_cols, cat_cols), artifact, output_dir
+        # Single model fallback
+        if "regression_model" in artifact:
+            return (scaler, encoders, numeric_cols, cat_cols), artifact["regression_model"], output_dir
+
+    # Fallback to individual files
     path = output_dir / "preprocessor.joblib"
     if not path.exists():
         return None, None, None
@@ -91,13 +109,30 @@ def predict(
     X_num_df = pd.DataFrame([{c: row.get(c, 0) if c in row.index else 0 for c in numeric_cols}]).reindex(columns=numeric_cols).fillna(0)
     X_cat_df = pd.DataFrame([{c: str(row.get(c, "__missing__")) for c in cat_cols}]).reindex(columns=cat_cols).fillna("__missing__")
     X = _apply_preprocessor(X_num_df, X_cat_df, scaler, encoders, numeric_cols, cat_cols)
-    pred_position = float(reg_model.predict(X)[0])
+
+    # Handle ensemble model (production pickle with meta_model + base_models)
+    if isinstance(reg_model, dict) and "meta_model" in reg_model and "base_models" in reg_model:
+        base_preds = []
+        for name, bm in reg_model["base_models"].items():
+            base_preds.append(bm.predict(X)[0])
+        meta_X = np.array([base_preds])
+        pred_position = float(reg_model["meta_model"].predict(meta_X)[0])
+    else:
+        pred_position = float(reg_model.predict(X)[0])
+
     result = {"predicted_finish_position": max(1.0, min(20.0, round(pred_position, 1)))}
-    podium_path = out_dir / "model_classification_podium_xgboost.joblib"
-    if not podium_path.exists():
-        podium_path = out_dir / "model_classification_podium_random_forest.joblib"
-    if podium_path.exists():
-        clf = joblib.load(podium_path)
+
+    # Podium probability
+    if isinstance(reg_model, dict) and "podium_model" in reg_model:
+        clf = reg_model["podium_model"]
         if hasattr(clf, "predict_proba"):
             result["podium_probability"] = float(clf.predict_proba(X)[0, 1])
+    else:
+        podium_path = out_dir / "model_classification_podium_xgboost.joblib"
+        if not podium_path.exists():
+            podium_path = out_dir / "model_classification_podium_random_forest.joblib"
+        if podium_path.exists():
+            clf = joblib.load(podium_path)
+            if hasattr(clf, "predict_proba"):
+                result["podium_probability"] = float(clf.predict_proba(X)[0, 1])
     return result

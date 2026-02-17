@@ -186,20 +186,43 @@ def build_merged_dataset(clean_dir: Optional[Path] = None) -> pd.DataFrame:
         base["constructor_prior_wins"] = np.nan
         base["constructor_prior_position"] = np.nan
 
+    # --- Historical pitstop averages (pre-race knowable, no leakage) ---
     pitstops = pd.read_csv(base_dir / "pitstops.csv") if (base_dir / "pitstops.csv").exists() else pd.DataFrame()
     if not pitstops.empty and len(pitstops) > 0:
-        # Ensure driver_id is string type for consistent merging
         pitstops["driver_id"] = pitstops["driver_id"].astype(str).str.strip().str.lower()
-        pit_agg = pitstops.groupby(["season", "round", "driver_id"]).agg(
-            total_stops=("stop_number", "count"),
-            mean_stop_duration=("duration_seconds", "mean"),
-        ).reset_index()
-        # Ensure base driver_id is also string
         base["driver_id"] = base["driver_id"].astype(str).str.strip().str.lower()
-        base = base.merge(pit_agg, on=["season", "round", "driver_id"], how="left")
+
+        # Build per-race pitstop aggregates for historical lookup
+        pit_per_race = pitstops.groupby(["season", "round", "driver_id"]).agg(
+            _stops=("stop_number", "count"),
+        ).reset_index()
+
+        races_for_pit = pd.read_csv(base_dir / "races.csv")[["season", "round", "circuit_id"]]
+        races_for_pit["circuit_id"] = races_for_pit["circuit_id"].astype(str).str.strip().str.lower()
+        pit_per_race = pit_per_race.merge(races_for_pit, on=["season", "round"], how="left")
+        pit_per_race["_ord"] = pit_per_race["season"] * 1000 + pit_per_race["round"]
+
+        hist_circuit_stops = []
+        hist_driver_stops = []
+        for _, row in base.iterrows():
+            s, r, did = row["season"], row["round"], row["driver_id"]
+            circ = row.get("circuit_id", "")
+            ord_cur = s * 1000 + r
+            past_pit = pit_per_race[pit_per_race["_ord"] < ord_cur]
+
+            # Historical average stops at this circuit
+            circ_past = past_pit[past_pit["circuit_id"] == circ]
+            hist_circuit_stops.append(circ_past["_stops"].mean() if len(circ_past) else np.nan)
+
+            # Driver historical average stops (last 10 races)
+            dr_past = past_pit[past_pit["driver_id"] == did].tail(10)
+            hist_driver_stops.append(dr_past["_stops"].mean() if len(dr_past) else np.nan)
+
+        base["historical_avg_stops_at_circuit"] = hist_circuit_stops
+        base["driver_historical_avg_stops"] = hist_driver_stops
     else:
-        base["total_stops"] = np.nan
-        base["mean_stop_duration"] = np.nan
+        base["historical_avg_stops_at_circuit"] = np.nan
+        base["driver_historical_avg_stops"] = np.nan
 
     drivers = pd.read_csv(base_dir / "drivers.csv")[["driver_id", "nationality"]].drop_duplicates("driver_id")
     constructors = pd.read_csv(base_dir / "constructors.csv")[["constructor_id", "nationality"]].rename(columns={"nationality": "constructor_nationality"})
@@ -254,36 +277,18 @@ def build_merged_dataset(clean_dir: Optional[Path] = None) -> pd.DataFrame:
         base["is_wet_race"] = 0
         base["wind_speed"] = np.nan
 
-    # --- Tyre strategy features (from FastF1) ---
-    tyre_stints = _load_csv("tyre_stints")
-    if not tyre_stints.empty:
-        # Aggregate tyre strategy per driver per race
-        tyre_agg = tyre_stints.groupby(["season", "round", "driver_id"]).agg(
-            num_stints=("stint_number", "max"),
-            num_compounds_used=("compound", "nunique"),
-            avg_stint_length=("tyre_life", "mean"),
-            total_tyre_laps=("tyre_life", "sum"),
-        ).reset_index()
-        tyre_agg["num_stints"] = tyre_agg["num_stints"] + 1  # stint_number is 0-indexed
+    # --- Pre-race derived features (no leakage) ---
+    # Season round number (normalized 0-1 for early vs late season form)
+    max_rounds = base.groupby("season")["round"].transform("max")
+    base["season_round_number"] = base["round"] / max_rounds.replace(0, 1)
 
-        # Get primary compound (most laps)
-        primary_compound = tyre_stints.groupby(["season", "round", "driver_id", "compound"]).agg(
-            compound_laps=("tyre_life", "sum")
-        ).reset_index()
-        primary_compound = primary_compound.sort_values("compound_laps", ascending=False)
-        primary_compound = primary_compound.groupby(["season", "round", "driver_id"]).first().reset_index()
-        primary_compound = primary_compound[["season", "round", "driver_id", "compound"]].rename(
-            columns={"compound": "primary_compound"}
-        )
-
-        tyre_agg = tyre_agg.merge(primary_compound, on=["season", "round", "driver_id"], how="left")
-        base = base.merge(tyre_agg, on=["season", "round", "driver_id"], how="left")
+    # Constructor relative performance (normalized team strength)
+    if "constructor_prior_points" in base.columns:
+        max_cons_pts = base.groupby(["season", "round"])["constructor_prior_points"].transform("max")
+        base["constructor_relative_performance"] = base["constructor_prior_points"] / max_cons_pts.replace(0, 1)
+        base["constructor_relative_performance"] = base["constructor_relative_performance"].fillna(0)
     else:
-        base["num_stints"] = np.nan
-        base["num_compounds_used"] = np.nan
-        base["avg_stint_length"] = np.nan
-        base["total_tyre_laps"] = np.nan
-        base["primary_compound"] = "unknown"
+        base["constructor_relative_performance"] = 0.0
 
     # --- Rolling and circuit features (no future leakage: only past races) ---
     if not results.empty and "finish_position" in results.columns and "grid_position" in results.columns:
@@ -303,6 +308,9 @@ def build_merged_dataset(clean_dir: Optional[Path] = None) -> pd.DataFrame:
         cons_recent = []
         driver_form_trend = []
         gap_to_teammate = []
+        circuit_avg_gain = []
+        driver_dnf_rate = []
+        constructor_dnf_rate = []
 
         for _, row in base.iterrows():
             s, r, did, cid, cid_circ = row["season"], row["round"], row["driver_id"], row["constructor_id"], row.get("circuit_id", "")
@@ -318,6 +326,26 @@ def build_merged_dataset(clean_dir: Optional[Path] = None) -> pd.DataFrame:
             driver_circuit.append(dc_past["finish_position"].mean() if len(dc_past) else np.nan)
             driver_gain.append(dr_past["positions_gained"].mean() if len(dr_past) else np.nan)
             cons_recent.append(cons_past["finish_position"].mean() if len(cons_past) else np.nan)
+
+            # Circuit average positions gained (overtaking difficulty)
+            circ_past = past[past["circuit_id"] == cid_circ]
+            circuit_avg_gain.append(circ_past["positions_gained"].mean() if len(circ_past) else np.nan)
+
+            # Driver DNF rate (historical reliability)
+            dr_past_all = past[past["driver_id"] == did]
+            if len(dr_past_all) >= 3:
+                dnf_count = (dr_past_all["finish_position"] > 20).sum() if "finish_position" in dr_past_all.columns else 0
+                driver_dnf_rate.append(dnf_count / len(dr_past_all))
+            else:
+                driver_dnf_rate.append(np.nan)
+
+            # Constructor DNF rate (mechanical reliability)
+            cons_past_all = past[past["constructor_id"] == cid]
+            if len(cons_past_all) >= 3:
+                dnf_count = (cons_past_all["finish_position"] > 20).sum() if "finish_position" in cons_past_all.columns else 0
+                constructor_dnf_rate.append(dnf_count / len(cons_past_all))
+            else:
+                constructor_dnf_rate.append(np.nan)
 
             # Driver form trend (slope of last N finishes)
             if len(dr_past) >= 2:
@@ -350,6 +378,9 @@ def build_merged_dataset(clean_dir: Optional[Path] = None) -> pd.DataFrame:
         base["constructor_recent_avg_finish"] = cons_recent
         base["driver_form_trend"] = driver_form_trend
         base["gap_to_teammate_quali"] = gap_to_teammate
+        base["circuit_avg_positions_gained"] = circuit_avg_gain
+        base["driver_dnf_rate"] = driver_dnf_rate
+        base["constructor_dnf_rate"] = constructor_dnf_rate
     else:
         base["driver_recent_avg_finish"] = np.nan
         base["driver_circuit_avg_finish"] = np.nan
@@ -357,6 +388,9 @@ def build_merged_dataset(clean_dir: Optional[Path] = None) -> pd.DataFrame:
         base["constructor_recent_avg_finish"] = np.nan
         base["driver_form_trend"] = 0.0
         base["gap_to_teammate_quali"] = np.nan
+        base["circuit_avg_positions_gained"] = np.nan
+        base["driver_dnf_rate"] = np.nan
+        base["constructor_dnf_rate"] = np.nan
 
     return base
 

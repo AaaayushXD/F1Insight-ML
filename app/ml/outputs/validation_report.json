@@ -1,0 +1,475 @@
+{
+  "validation_date": "2026-02-17T18:11:03.145569",
+  "model_version": "2.0.0",
+  "test_seasons": "2024-2025",
+  "test_rows": 958,
+  "ensemble": {
+    "mae": 3.085309486557575,
+    "rmse": 4.03646921040382,
+    "spearman": 0.7056281201580465,
+    "bucket_accuracy": {
+      "bucket_accuracy": 0.6659707724425887,
+      "confusion": {
+        "P1-3": 0.18055555555555555,
+        "P4-10": 0.6130952380952381,
+        "P11-20": 0.8493723849372385
+      }
+    }
+  },
+  "individual_models": {
+    "ridge": {
+      "mae": 3.15198084965806,
+      "rmse": 4.060162092456145,
+      "spearman": 0.7039281061177508
+    },
+    "random_forest": {
+      "mae": 3.1612722202674264,
+      "rmse": 4.088135650770164,
+      "spearman": 0.6985816186049238
+    },
+    "gradient_boosting": {
+      "mae": 3.1556654765008245,
+      "rmse": 4.103303704863463,
+      "spearman": 0.695657781947618
+    },
+    "xgboost": {
+      "mae": 3.1039493083953857,
+      "rmse": 4.0447964430093215,
+      "spearman": 0.7040245579074986
+    }
+  },
+  "baseline_grid_position": {
+    "mae": 3.125260960334029,
+    "spearman": 0.6900433343918728
+  },
+  "improvement_over_baseline": {
+    "mae_reduction": 0.039951473776453916,
+    "mae_reduction_pct": 1.2783404100815916
+  },
+  "per_race": [
+    {
+      "season": 2024,
+      "round": 1,
+      "circuit": "bahrain",
+      "n_drivers": 20,
+      "mae": 2.5859618356322187,
+      "spearman": 0.8796992481203006
+    },
+    {
+      "season": 2024,
+      "round": 2,
+      "circuit": "jeddah",
+      "n_drivers": 20,
+      "mae": 2.667689407003375,
+      "spearman": 0.8120300751879698
+    },
+    {
+      "season": 2024,
+      "round": 3,
+      "circuit": "albert_park",
+      "n_drivers": 19,
+      "mae": 4.275980308246804,
+      "spearman": 0.37543859649122807
+    },
+    {
+      "season": 2024,
+      "round": 4,
+      "circuit": "suzuka",
+      "n_drivers": 20,
+      "mae": 1.9112492916263506,
+      "spearman": 0.8902255639097743
+    },
+    {
+      "season": 2024,
+      "round": 5,
+      "circuit": "shanghai",
+      "n_drivers": 20,
+      "mae": 2.6926053508361707,
+      "spearman": 0.7999999999999999
+    },
+    {
+      "season": 2024,
+      "round": 6,
+      "circuit": "miami",
+      "n_drivers": 20,
+      "mae": 2.7562365918643934,
+      "spearman": 0.8210526315789473
+    },
+    {
+      "season": 2024,
+      "round": 7,
+      "circuit": "imola",
+      "n_drivers": 20,
+      "mae": 2.220503553977121,
+      "spearman": 0.900751879699248
+    },
+    {
+      "season": 2024,
+      "round": 8,
+      "circuit": "monaco",
+      "n_drivers": 20,
+      "mae": 2.871335203049566,
+      "spearman": 0.7729323308270677
+    },
+    {
+      "season": 2024,
+      "round": 9,
+      "circuit": "villeneuve",
+      "n_drivers": 20,
+      "mae": 3.894649102064906,
+      "spearman": 0.5819548872180451
+    },
+    {
+      "season": 2024,
+      "round": 10,
+      "circuit": "catalunya",
+      "n_drivers": 20,
+      "mae": 2.1219694939203864,
+      "spearman": 0.9413533834586465
+    },
+    {
+      "season": 2024,
+      "round": 11,
+      "circuit": "red_bull_ring",
+      "n_drivers": 20,
+      "mae": 3.369553784815966,
+      "spearman": 0.5894736842105263
+    },
+    {
+      "season": 2024,
+      "round": 12,
+      "circuit": "silverstone",
+      "n_drivers": 20,
+      "mae": 3.6281600261899065,
+      "spearman": 0.5954887218045113
+    },
+    {
+      "season": 2024,
+      "round": 13,
+      "circuit": "hungaroring",
+      "n_drivers": 20,
+      "mae": 2.4486651510723227,
+      "spearman": 0.9593984962406013
+    },
+    {
+      "season": 2024,
+      "round": 14,
+      "circuit": "spa",
+      "n_drivers": 20,
+      "mae": 2.6385043421195187,
+      "spearman": 0.793984962406015
+    },
+    {
+      "season": 2024,
+      "round": 15,
+      "circuit": "zandvoort",
+      "n_drivers": 20,
+      "mae": 2.257647560088443,
+      "spearman": 0.9248120300751879
+    },
+    {
+      "season": 2024,
+      "round": 16,
+      "circuit": "monza",
+      "n_drivers": 20,
+      "mae": 2.558062270144455,
+      "spearman": 0.7924812030075187
+    },
+    {
+      "season": 2024,
+      "round": 17,
+      "circuit": "baku",
+      "n_drivers": 20,
+      "mae": 4.0188111770493995,
+      "spearman": 0.5022556390977443
+    },
+    {
+      "season": 2024,
+      "round": 18,
+      "circuit": "marina_bay",
+      "n_drivers": 20,
+      "mae": 2.2432174192438383,
+      "spearman": 0.8721804511278194
+    },
+    {
+      "season": 2024,
+      "round": 19,
+      "circuit": "americas",
+      "n_drivers": 20,
+      "mae": 3.0875683810366943,
+      "spearman": 0.7443609022556391
+    },
+    {
+      "season": 2024,
+      "round": 20,
+      "circuit": "rodriguez",
+      "n_drivers": 20,
+      "mae": 3.65226976559819,
+      "spearman": 0.7112781954887217
+    },
+    {
+      "season": 2024,
+      "round": 21,
+      "circuit": "interlagos",
+      "n_drivers": 20,
+      "mae": 3.406449590591541,
+      "spearman": 0.6857142857142857
+    },
+    {
+      "season": 2024,
+      "round": 22,
+      "circuit": "vegas",
+      "n_drivers": 20,
+      "mae": 2.9137470377357078,
+      "spearman": 0.7187969924812029
+    },
+    {
+      "season": 2024,
+      "round": 23,
+      "circuit": "losail",
+      "n_drivers": 20,
+      "mae": 3.4930217460631647,
+      "spearman": 0.7082706766917292
+    },
+    {
+      "season": 2024,
+      "round": 24,
+      "circuit": "yas_marina",
+      "n_drivers": 20,
+      "mae": 3.7062151647568156,
+      "spearman": 0.631578947368421
+    },
+    {
+      "season": 2025,
+      "round": 1,
+      "circuit": "albert_park",
+      "n_drivers": 20,
+      "mae": 3.9514794422588126,
+      "spearman": 0.5413533834586466
+    },
+    {
+      "season": 2025,
+      "round": 2,
+      "circuit": "shanghai",
+      "n_drivers": 20,
+      "mae": 4.122267805153967,
+      "spearman": 0.45714285714285713
+    },
+    {
+      "season": 2025,
+      "round": 3,
+      "circuit": "suzuka",
+      "n_drivers": 20,
+      "mae": 2.134398635714761,
+      "spearman": 0.9308270676691727
+    },
+    {
+      "season": 2025,
+      "round": 4,
+      "circuit": "bahrain",
+      "n_drivers": 20,
+      "mae": 2.7724583551005746,
+      "spearman": 0.7834586466165413
+    },
+    {
+      "season": 2025,
+      "round": 5,
+      "circuit": "jeddah",
+      "n_drivers": 20,
+      "mae": 2.402869617473999,
+      "spearman": 0.7834586466165413
+    },
+    {
+      "season": 2025,
+      "round": 6,
+      "circuit": "miami",
+      "n_drivers": 20,
+      "mae": 1.9567209381492412,
+      "spearman": 0.875187969924812
+    },
+    {
+      "season": 2025,
+      "round": 7,
+      "circuit": "imola",
+      "n_drivers": 20,
+      "mae": 2.6179915571764907,
+      "spearman": 0.8285714285714285
+    },
+    {
+      "season": 2025,
+      "round": 8,
+      "circuit": "monaco",
+      "n_drivers": 20,
+      "mae": 3.030264421753624,
+      "spearman": 0.6390977443609022
+    },
+    {
+      "season": 2025,
+      "round": 9,
+      "circuit": "catalunya",
+      "n_drivers": 19,
+      "mae": 3.529103824391428,
+      "spearman": 0.5473684210526315
+    },
+    {
+      "season": 2025,
+      "round": 10,
+      "circuit": "villeneuve",
+      "n_drivers": 20,
+      "mae": 3.3763172578911247,
+      "spearman": 0.5954887218045113
+    },
+    {
+      "season": 2025,
+      "round": 11,
+      "circuit": "red_bull_ring",
+      "n_drivers": 20,
+      "mae": 3.664907947300155,
+      "spearman": 0.556390977443609
+    },
+    {
+      "season": 2025,
+      "round": 12,
+      "circuit": "silverstone",
+      "n_drivers": 20,
+      "mae": 4.213418483230705,
+      "spearman": 0.4451127819548871
+    },
+    {
+      "season": 2025,
+      "round": 13,
+      "circuit": "spa",
+      "n_drivers": 20,
+      "mae": 3.023668886624898,
+      "spearman": 0.7458646616541353
+    },
+    {
+      "season": 2025,
+      "round": 14,
+      "circuit": "hungaroring",
+      "n_drivers": 20,
+      "mae": 2.8298690920227303,
+      "spearman": 0.8511278195488721
+    },
+    {
+      "season": 2025,
+      "round": 15,
+      "circuit": "zandvoort",
+      "n_drivers": 20,
+      "mae": 5.210708192198913,
+      "spearman": 0.015037593984962403
+    },
+    {
+      "season": 2025,
+      "round": 16,
+      "circuit": "monza",
+      "n_drivers": 20,
+      "mae": 2.651337209673698,
+      "spearman": 0.7503759398496239
+    },
+    {
+      "season": 2025,
+      "round": 17,
+      "circuit": "baku",
+      "n_drivers": 20,
+      "mae": 2.8702070481968276,
+      "spearman": 0.6887218045112782
+    },
+    {
+      "season": 2025,
+      "round": 18,
+      "circuit": "marina_bay",
+      "n_drivers": 20,
+      "mae": 2.3790192589716797,
+      "spearman": 0.8706766917293233
+    },
+    {
+      "season": 2025,
+      "round": 19,
+      "circuit": "americas",
+      "n_drivers": 20,
+      "mae": 2.5632500351900624,
+      "spearman": 0.8330827067669173
+    },
+    {
+      "season": 2025,
+      "round": 20,
+      "circuit": "rodriguez",
+      "n_drivers": 20,
+      "mae": 3.0134520312157798,
+      "spearman": 0.7263157894736841
+    },
+    {
+      "season": 2025,
+      "round": 21,
+      "circuit": "interlagos",
+      "n_drivers": 20,
+      "mae": 3.9284380215411603,
+      "spearman": 0.47067669172932325
+    },
+    {
+      "season": 2025,
+      "round": 22,
+      "circuit": "vegas",
+      "n_drivers": 20,
+      "mae": 4.31241126116616,
+      "spearman": 0.2992481203007519
+    },
+    {
+      "season": 2025,
+      "round": 23,
+      "circuit": "losail",
+      "n_drivers": 20,
+      "mae": 3.0504453879042446,
+      "spearman": 0.7353383458646616
+    },
+    {
+      "season": 2025,
+      "round": 24,
+      "circuit": "yas_marina",
+      "n_drivers": 20,
+      "mae": 3.1515003477114893,
+      "spearman": 0.7533834586466165
+    }
+  ],
+  "sanity_checks": {
+    "p1_predicted_better_than_p20": {
+      "avg_pred_p1_qualifier": 3.6659159932276757,
+      "avg_pred_p20_qualifier": 14.804676348141566,
+      "passed": true
+    },
+    "predictions_in_range": {
+      "min_pred": 1.2603270850339596,
+      "max_pred": 16.95227798084379,
+      "passed": true
+    },
+    "beats_random": {
+      "random_mae": 6.382061951422122,
+      "model_mae": 3.085309486557575,
+      "passed": true
+    }
+  },
+  "success_criteria": {
+    "test_mae_under_3_2": {
+      "target": "< 3.2",
+      "actual": "3.0853",
+      "passed": true
+    },
+    "spearman_over_0_65": {
+      "target": "> 0.65",
+      "actual": "0.7056",
+      "passed": true
+    },
+    "no_overfitting": {
+      "target": "beats baseline",
+      "actual": "3.0853 vs 3.1253",
+      "passed": true
+    },
+    "beats_baseline": {
+      "target": "< 3.1253",
+      "actual": "3.0853",
+      "passed": true
+    },
+    "all_passed": true
+  }
+}

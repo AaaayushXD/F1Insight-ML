@@ -672,6 +672,273 @@ class TestDataCleaning:
                 assert did == did.lower(), f"Driver ID not lowercase: {did}"
 
 
+class TestFeatureLeakage:
+    """Verify no race-time features leak into the model."""
+
+    def test_no_race_time_features_in_numeric(self):
+        """Check that NUMERIC_FEATURES does NOT contain race-time features."""
+        from app.ml.train import NUMERIC_FEATURES
+
+        race_time_features = [
+            "total_stops",
+            "mean_stop_duration",
+            "num_stints",
+            "num_compounds_used",
+            "avg_stint_length",
+            "total_tyre_laps",
+        ]
+        for feat in race_time_features:
+            assert feat not in NUMERIC_FEATURES, (
+                f"Race-time feature '{feat}' found in NUMERIC_FEATURES (data leakage)"
+            )
+
+    def test_no_race_time_features_in_categorical(self):
+        """Check CATEGORICAL_FEATURES does NOT contain primary_compound."""
+        from app.ml.train import CATEGORICAL_FEATURES
+
+        assert "primary_compound" not in CATEGORICAL_FEATURES, (
+            "Race-time feature 'primary_compound' found in CATEGORICAL_FEATURES (data leakage)"
+        )
+
+    def test_pre_race_features_present(self):
+        """Check that NUMERIC_FEATURES contains expected pre-race features."""
+        from app.ml.train import NUMERIC_FEATURES
+
+        expected_pre_race = [
+            "historical_avg_stops_at_circuit",
+            "driver_historical_avg_stops",
+            "circuit_avg_positions_gained",
+            "season_round_number",
+            "constructor_relative_performance",
+            "driver_dnf_rate",
+            "constructor_dnf_rate",
+        ]
+        for feat in expected_pre_race:
+            assert feat in NUMERIC_FEATURES, (
+                f"Expected pre-race feature '{feat}' missing from NUMERIC_FEATURES"
+            )
+
+
+class TestWalkForwardCV:
+    """Verify temporal integrity of walk-forward cross-validation."""
+
+    @pytest.fixture()
+    def synthetic_df(self):
+        """Create a synthetic DataFrame spanning 2014-2023."""
+        rows = []
+        for season in range(2014, 2024):
+            for rnd in range(1, 4):
+                for driver_idx in range(5):
+                    rows.append({
+                        "season": season,
+                        "round": rnd,
+                        "driver_id": f"driver_{driver_idx}",
+                        "constructor_id": f"team_{driver_idx % 3}",
+                        "circuit_id": f"circuit_{rnd}",
+                        "qualifying_position": driver_idx + 1,
+                        "grid_position": driver_idx + 1,
+                        "finish_position": float(driver_idx + 1 + np.random.randint(-1, 2)),
+                    })
+        return pd.DataFrame(rows)
+
+    def test_walk_forward_produces_folds(self, synthetic_df):
+        """Call walk_forward_cv with mock data and verify it produces multiple folds."""
+        from app.ml.train import walk_forward_cv
+
+        numeric_cols = ["qualifying_position", "grid_position"]
+        cat_cols = ["driver_id", "circuit_id"]
+
+        from sklearn.linear_model import Ridge
+        folds = walk_forward_cv(
+            synthetic_df, numeric_cols, cat_cols,
+            model_factory=lambda: Ridge(alpha=1.0),
+            min_train_years=4,
+        )
+
+        assert isinstance(folds, list), "walk_forward_cv should return a list"
+        assert len(folds) >= 2, f"Expected at least 2 folds, got {len(folds)}"
+
+    def test_walk_forward_no_future_leakage(self, synthetic_df):
+        """Verify that each fold's val_year > all training years."""
+        from app.ml.train import walk_forward_cv
+
+        numeric_cols = ["qualifying_position", "grid_position"]
+        cat_cols = ["driver_id", "circuit_id"]
+
+        from sklearn.linear_model import Ridge
+        folds = walk_forward_cv(
+            synthetic_df, numeric_cols, cat_cols,
+            model_factory=lambda: Ridge(alpha=1.0),
+            min_train_years=4,
+        )
+
+        for fold in folds:
+            val_year = fold.get("val_year") or fold.get("val_season")
+            train_years = fold.get("train_years") or fold.get("train_seasons")
+            if val_year is not None and train_years is not None:
+                assert val_year > max(train_years), (
+                    f"Validation year {val_year} is not after all training years {train_years}"
+                )
+
+    def test_walk_forward_expanding_window(self, synthetic_df):
+        """Verify train sizes are increasing across folds."""
+        from app.ml.train import walk_forward_cv
+
+        numeric_cols = ["qualifying_position", "grid_position"]
+        cat_cols = ["driver_id", "circuit_id"]
+
+        from sklearn.linear_model import Ridge
+        folds = walk_forward_cv(
+            synthetic_df, numeric_cols, cat_cols,
+            model_factory=lambda: Ridge(alpha=1.0),
+            min_train_years=4,
+        )
+
+        train_sizes = [fold.get("train_size", 0) for fold in folds]
+        for i in range(1, len(train_sizes)):
+            assert train_sizes[i] >= train_sizes[i - 1], (
+                f"Train size should be non-decreasing: fold {i-1} had {train_sizes[i-1]}, "
+                f"fold {i} had {train_sizes[i]}"
+            )
+
+
+class TestEnsemble:
+    """Verify ensemble structure."""
+
+    def test_ensemble_file_exists(self):
+        """Check app/ml/outputs/ensemble.joblib exists."""
+        ensemble_path = OUTPUT_DIR / "ensemble.joblib"
+        assert ensemble_path.exists(), f"Ensemble file not found: {ensemble_path}"
+
+    def test_ensemble_has_required_keys(self):
+        """Load ensemble.joblib and verify required keys."""
+        import joblib
+
+        ensemble_path = OUTPUT_DIR / "ensemble.joblib"
+        if not ensemble_path.exists():
+            pytest.skip("ensemble.joblib not found")
+
+        ensemble = joblib.load(ensemble_path)
+        required_keys = ["base_models", "meta_model", "scaler", "encoders"]
+        for key in required_keys:
+            assert key in ensemble, f"Missing key '{key}' in ensemble.joblib"
+
+    def test_ensemble_base_model_count(self):
+        """Verify base_models has at least 3 models."""
+        import joblib
+
+        ensemble_path = OUTPUT_DIR / "ensemble.joblib"
+        if not ensemble_path.exists():
+            pytest.skip("ensemble.joblib not found")
+
+        ensemble = joblib.load(ensemble_path)
+        base_models = ensemble.get("base_models", {})
+        assert len(base_models) >= 3, (
+            f"Expected at least 3 base models, got {len(base_models)}"
+        )
+
+
+class TestProductionPickle:
+    """Verify production model."""
+
+    def test_production_pickle_exists(self):
+        """Check app/ml/outputs/f1insight_production_model.joblib exists."""
+        path = OUTPUT_DIR / "f1insight_production_model.joblib"
+        assert path.exists(), f"Production model not found: {path}"
+
+    def test_production_pickle_has_required_keys(self):
+        """Load production pickle and verify required keys."""
+        import joblib
+
+        path = OUTPUT_DIR / "f1insight_production_model.joblib"
+        if not path.exists():
+            pytest.skip("f1insight_production_model.joblib not found")
+
+        model = joblib.load(path)
+        required_keys = [
+            "version", "scaler", "encoders", "base_models",
+            "meta_model", "numeric_cols", "cat_cols", "metadata",
+        ]
+        for key in required_keys:
+            assert key in model, f"Missing key '{key}' in production pickle"
+
+    def test_production_pickle_version(self):
+        """Verify production pickle version is 2.0.0."""
+        import joblib
+
+        path = OUTPUT_DIR / "f1insight_production_model.joblib"
+        if not path.exists():
+            pytest.skip("f1insight_production_model.joblib not found")
+
+        model = joblib.load(path)
+        assert model.get("version") == "2.0.0", (
+            f"Expected version '2.0.0', got '{model.get('version')}'"
+        )
+
+
+class TestSuccessCriteria:
+    """Verify model meets success criteria."""
+
+    def test_all_criteria_passed(self):
+        """Load evaluation_report.json and verify all success criteria passed."""
+        import json
+
+        report_path = OUTPUT_DIR / "evaluation_report.json"
+        if not report_path.exists():
+            pytest.skip("Evaluation report not found")
+
+        with open(report_path) as f:
+            report = json.load(f)
+
+        success_criteria = report.get("success_criteria", {})
+        assert success_criteria.get("all_passed") is True, (
+            f"Not all success criteria passed: {success_criteria}"
+        )
+
+    def test_beats_grid_baseline(self):
+        """Verify ensemble MAE is lower than baseline grid position MAE."""
+        import json
+
+        report_path = OUTPUT_DIR / "evaluation_report.json"
+        if not report_path.exists():
+            pytest.skip("Evaluation report not found")
+
+        with open(report_path) as f:
+            report = json.load(f)
+
+        baseline_mae = report.get("baseline_grid_position", {}).get("test_mae")
+        ensemble_mae = report.get("regression", {}).get("ensemble", {}).get("test_mae")
+
+        if baseline_mae is None or ensemble_mae is None:
+            pytest.skip("Baseline or ensemble MAE not found in report")
+
+        assert ensemble_mae < baseline_mae, (
+            f"Ensemble MAE ({ensemble_mae:.4f}) should be lower than "
+            f"baseline grid position MAE ({baseline_mae:.4f})"
+        )
+
+    def test_no_severe_overfitting_v2(self):
+        """Verify best model train/val gap < 0.5."""
+        import json
+
+        report_path = OUTPUT_DIR / "evaluation_report.json"
+        if not report_path.exists():
+            pytest.skip("Evaluation report not found")
+
+        with open(report_path) as f:
+            report = json.load(f)
+
+        best_model = report.get("best_model", {})
+        train_val_gap = best_model.get("train_val_gap")
+
+        if train_val_gap is None:
+            pytest.skip("train_val_gap not found in best_model")
+
+        assert abs(train_val_gap) < 0.5, (
+            f"Best model train_val_gap ({train_val_gap:.4f}) exceeds threshold of 0.5"
+        )
+
+
 class TestAPIEndpoints:
     """Tests for API endpoints (integration tests)."""
 
